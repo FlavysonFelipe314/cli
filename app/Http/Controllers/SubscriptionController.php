@@ -85,7 +85,8 @@ class SubscriptionController extends Controller
             }
 
             // Criar assinatura no Asaas
-            $returnUrl = route('subscriptions.index') . '?payment=success';
+            // URL de retorno após pagamento bem-sucedido - redirecionar para dashboard
+            $returnUrl = route('dashboard.index') . '?payment=success';
             $subscriptionData = $this->asaasService->createSubscription([
                 'customer_id' => $user->asaas_customer_id,
                 'billing_type' => $validated['billing_type'],

@@ -29,6 +29,12 @@ Route::post('webhook/asaas', [\App\Http\Controllers\Webhook\AsaasWebhookControll
 // Callback do Asaas após pagamento (público)
 Route::get('payment/callback', [\App\Http\Controllers\SubscriptionController::class, 'paymentCallback'])->name('payment.callback');
 
+// Verificação de status de pagamento
+Route::middleware(['auth'])->group(function () {
+    Route::get('payment/waiting', [\App\Http\Controllers\PaymentStatusController::class, 'waiting'])->name('payment.waiting');
+    Route::get('payment/status/check', [\App\Http\Controllers\PaymentStatusController::class, 'checkStatus'])->name('payment.status.check');
+});
+
 // Página pública de planos e cadastro
 Route::get('plans', [\App\Http\Controllers\PublicSubscriptionController::class, 'showPlans'])->name('public.plans');
 Route::get('signup/{plan}', [\App\Http\Controllers\PublicSubscriptionController::class, 'showSignup'])->name('public.signup');

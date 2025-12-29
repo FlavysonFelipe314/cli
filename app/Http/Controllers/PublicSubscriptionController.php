@@ -105,7 +105,8 @@ class PublicSubscriptionController extends Controller
             $user->update(['asaas_customer_id' => $customerData['id']]);
 
             // Criar assinatura no Asaas
-            $returnUrl = route('public.payment.success');
+            // URL de retorno após pagamento bem-sucedido - redirecionar para dashboard
+            $returnUrl = route('dashboard.index') . '?payment=success';
             $subscriptionData = $this->asaasService->createSubscription([
                 'customer_id' => $user->asaas_customer_id,
                 'billing_type' => $validated['billing_type'],
@@ -184,8 +185,17 @@ class PublicSubscriptionController extends Controller
             }
 
             if ($paymentUrl) {
-                // Fazer login automático e redirecionar para pagamento
+                // Fazer login automático
                 Auth::login($user);
+                
+                // Salvar informações do pagamento na sessão para quando o usuário voltar do Asaas
+                session()->put('pending_payment', [
+                    'type' => 'subscription',
+                    'subscription_id' => $subscriptionData['id'],
+                    'payment_id' => $paymentData['id'] ?? null,
+                ]);
+                
+                // Redirecionar para pagamento no Asaas
                 return redirect($paymentUrl);
             }
 
@@ -212,6 +222,47 @@ class PublicSubscriptionController extends Controller
                 ->with('info', 'Faça login para acessar sua conta.');
         }
 
-        return view('public.payment-success');
+        $user = Auth::user();
+
+        // Verificar se a assinatura foi ativada
+        $subscription = $user->activeSubscription();
+        
+        if ($subscription && $subscription->status === 'active') {
+            // Assinatura ativa - redirecionar para dashboard
+            return redirect()->route('dashboard.index')
+                ->with('success', 'Assinatura ativada com sucesso! Bem-vindo ao CLIVUS!');
+        }
+
+        // Se ainda não foi ativada, verificar se há assinatura pendente
+        $pendingSubscription = $user->subscriptions()
+            ->where('status', 'pending')
+            ->latest()
+            ->first();
+
+        if ($pendingSubscription) {
+            // Tentar verificar o status do pagamento no Asaas
+            try {
+                $payment = $this->asaasService->getSubscriptionPayments($pendingSubscription->asaas_subscription_id);
+                if ($payment && isset($payment['status']) && $payment['status'] === 'CONFIRMED') {
+                    // Pagamento confirmado mas assinatura ainda não ativada - ativar manualmente
+                    $pendingSubscription->update(['status' => 'active']);
+                    Log::info('Assinatura ativada manualmente no callback', [
+                        'subscription_id' => $pendingSubscription->id,
+                        'user_id' => $user->id,
+                    ]);
+                    return redirect()->route('dashboard.index')
+                        ->with('success', 'Assinatura ativada com sucesso! Bem-vindo ao CLIVUS!');
+                }
+            } catch (\Exception $e) {
+                Log::warning('Erro ao verificar pagamento no callback', [
+                    'subscription_id' => $pendingSubscription->asaas_subscription_id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        // Se ainda não foi ativada, redirecionar para dashboard com mensagem informativa
+        return redirect()->route('dashboard.index')
+            ->with('info', 'Aguardando confirmação do pagamento. Sua assinatura será ativada automaticamente quando o pagamento for confirmado.');
     }
 }

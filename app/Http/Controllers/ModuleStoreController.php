@@ -99,7 +99,11 @@ class ModuleStoreController extends Controller
 
         // Criar pagamento no Asaas
         try {
-            $returnUrl = route('modules.payment.callback') . '?module=' . $module->id;
+            // URL de retorno após pagamento - página de aguardando que verifica status
+            $returnUrl = route('payment.waiting', [
+                'module' => $module->id,
+                'payment_id' => null, // Será preenchido após criar o pagamento
+            ]);
             
             // Verificar se já existe um UserModule pendente para este módulo
             $existingUserModule = UserModule::where('user_id', $user->id)
@@ -204,6 +208,17 @@ class ModuleStoreController extends Controller
                     'payment_id' => $payment['id'] ?? null,
                     'payment_url' => $paymentUrl,
                 ]);
+                
+                // Salvar informações do pagamento na sessão para quando o usuário voltar do Asaas
+                session()->put('pending_payment', [
+                    'type' => 'module',
+                    'module_id' => $module->id,
+                    'payment_id' => $payment['id'] ?? null,
+                ]);
+                
+                // Redirecionar para o Asaas
+                // Quando o usuário completar o pagamento, ele pode voltar manualmente ou usar a página de waiting
+                // A página de waiting verificará automaticamente o status
                 return redirect($paymentUrl);
             }
 
@@ -229,7 +244,7 @@ class ModuleStoreController extends Controller
         $user = Auth::user();
 
         if (!$moduleId || !$user) {
-            return redirect()->route('modules.store')
+            return redirect()->route('dashboard.index')
                 ->with('error', 'Parâmetros inválidos.');
         }
 
@@ -240,7 +255,8 @@ class ModuleStoreController extends Controller
             ->first();
 
         if ($userModule) {
-            return redirect()->route('modules.store')
+            // Módulo ativado com sucesso - redirecionar para dashboard
+            return redirect()->route('dashboard.index')
                 ->with('success', 'Módulo ativado com sucesso!');
         }
 
@@ -250,12 +266,31 @@ class ModuleStoreController extends Controller
             ->where('status', 'inactive')
             ->first();
 
-        if ($userModule) {
-            return redirect()->route('modules.store')
-                ->with('info', 'Aguardando confirmação do pagamento. O módulo será ativado automaticamente quando o pagamento for confirmado.');
+        if ($userModule && $userModule->asaas_payment_id) {
+            // Tentar verificar o status do pagamento no Asaas
+            try {
+                $payment = $this->asaasService->getPayment($userModule->asaas_payment_id);
+                if ($payment && isset($payment['status']) && $payment['status'] === 'CONFIRMED') {
+                    // Pagamento confirmado mas módulo ainda não ativado - ativar manualmente
+                    $userModule->update(['status' => 'active']);
+                    \Log::info('Módulo ativado manualmente no callback', [
+                        'user_module_id' => $userModule->id,
+                        'module_id' => $moduleId,
+                        'user_id' => $user->id,
+                    ]);
+                    return redirect()->route('dashboard.index')
+                        ->with('success', 'Módulo ativado com sucesso!');
+                }
+            } catch (\Exception $e) {
+                \Log::warning('Erro ao verificar pagamento no callback', [
+                    'payment_id' => $userModule->asaas_payment_id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
-        return redirect()->route('modules.store')
-            ->with('error', 'Módulo não encontrado.');
+        // Se ainda não foi ativado, redirecionar para dashboard com mensagem informativa
+        return redirect()->route('dashboard.index')
+            ->with('info', 'Aguardando confirmação do pagamento. O módulo será ativado automaticamente quando o pagamento for confirmado.');
     }
 }
