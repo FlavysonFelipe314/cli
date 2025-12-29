@@ -1,0 +1,30 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::create('prolabore_partners', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('prolabore_calculation_id')->constrained()->onDelete('cascade');
+            $table->string('name');
+            $table->decimal('distribution_percentage', 5, 2)->default(0);
+            $table->timestamps();
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::dropIfExists('prolabore_partners');
+    }
+};
