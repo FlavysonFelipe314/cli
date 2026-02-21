@@ -128,6 +128,8 @@ class AsaasWebhookController extends Controller
 
         switch ($event) {
             case 'PAYMENT_CONFIRMED':
+            case 'PAYMENT_RECEIVED':
+                // Tratar PAYMENT_RECEIVED como confirmação (PIX/checkout)
                 // Processar pagamento de módulo primeiro (prioridade)
                 if ($userModule) {
                     if ($userModule->status === 'inactive') {
